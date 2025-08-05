@@ -511,39 +511,48 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 @client.event
 async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     """リアクションが取り消された際に、その人の作業記録を削除する"""
-    if payload.user_id == client.user.id: return
+    # Bot自身のリアクションは無視
+    if payload.user_id == client.user.id:
+        return
 
     try:
         # サーバーとメンバーの情報を取得
         guild = client.get_guild(payload.guild_id)
-        if not guild: return
+        if not guild:
+            return
         member = await guild.fetch_member(payload.user_id)
-        if not member or member.bot: return
+        if not member or member.bot:
+            return
         
-        user_name = member.display_name
-        message_id = str(payload.message_id)
+        user_name_to_delete = member.display_name
+        message_id_to_delete = str(payload.message_id)
 
-        print("--- リアクション取消イベント検知 ---")
-        print(f"探している人: {user_name}")
-        print(f"探しているMessage ID: {message_id}")
+        print(f"--- リアクション取消検知 ---")
+        print(f"探している人: {user_name_to_delete}, Message ID: {message_id_to_delete}")
 
-        # 作業記録シートから、該当する記録を探す
+        # 作業記録シートの全データを取得
         all_logs = log_worksheet.get_all_records()
-        row_to_delete = -1
-
-        for i, log in enumerate(reversed(all_logs)):
-            # Message IDと名前が一致する記録を探す
-            if (log.get('Message ID') == message_id and log.get('名前') == user_name):
-                row_to_delete = len(all_logs) - i
-                break
         
-        # 対象の行が見つかったら削除
-        if row_to_delete != -1:
-            log_worksheet.delete_rows(row_to_delete)
-            print(f"リアクション取消: {user_name}さんの記録 (Message ID: {message_id}) を削除しました。")
+        # 削除対象の行番号をリストアップする
+        rows_to_delete = []
+        # スプレッドシートの行番号は1から始まるので、iに2を加える
+        for i, log in enumerate(all_logs):
+            sheet_user_name = log.get('名前')
+            sheet_message_id = str(log.get('Message ID', ''))
+            
+            if sheet_user_name == user_name_to_delete and sheet_message_id == message_id_to_delete:
+                rows_to_delete.append(i + 2)
+
+        if rows_to_delete:
+            # 見つかった行を後ろから順番に削除する
+            for row_num in sorted(rows_to_delete, reverse=True):
+                log_worksheet.delete_rows(row_num)
+                print(f"削除成功: {row_num}行目の記録を削除しました。")
+        else:
+            print("削除対象の記録が見つかりませんでした。")
 
     except Exception as e:
-        print(f"リアクション取消処理中にエラー: {e}")
+        print(f"リアクション取消処理中にエラーが発生しました: {e}")
 
 # -------------------- メッセージ削除イベントの処理  --------------------
 
@@ -703,4 +712,5 @@ def keep_alive():
 # -------------------- Botの実行 --------------------
 if __name__ == '__main__':
     keep_alive()
+
     client.run(TOKEN)
